@@ -7,25 +7,26 @@ dotenv.config();
 
 /**
  * Seed Database Script
- * Populates initial demonstration data into MySQL tables:
- * - 4 Users with standard role privileges (Admin, Sales, Warehouse, Accounts)
- * - Sample Customers across CRM statuses
- * - Sample Products (with low stock warnings for testing)
- * - Initial Stock Logs
- * - Sample Sales Challans with static JSON snapshots
+ * Supports standard local env variables AND Railway MySQL variables (MYSQLHOST, etc.)
  */
 export const seedDatabase = async () => {
   console.log('🌱 Starting Database Seeding Process...');
-  
+
   // Ensure tables exist
   await initializeDatabase();
 
+  const host = process.env.MYSQLHOST || process.env.DB_HOST || 'localhost';
+  const port = Number(process.env.MYSQLPORT || process.env.DB_PORT || 3306);
+  const user = process.env.MYSQLUSER || process.env.DB_USER || 'root';
+  const password = process.env.MYSQLPASSWORD || process.env.DB_PASSWORD || '';
+  const database = process.env.MYSQLDATABASE || process.env.DB_NAME || 'mini_erp_crm';
+
   const pool = mysql.createPool({
-    host: process.env.DB_HOST || 'localhost',
-    port: Number(process.env.DB_PORT) || 3306,
-    user: process.env.DB_USER || 'root',
-    password: process.env.DB_PASSWORD || 'root',
-    database: process.env.DB_NAME || 'mini_erp_crm',
+    host,
+    port,
+    user,
+    password,
+    database
   });
 
   try {
@@ -54,10 +55,10 @@ export const seedDatabase = async () => {
       ['Accounts Specialist', 'accounts@erp.com', passwordHash, 'Accounts', 'Active']
     ];
 
-    for (const user of users) {
+    for (const userRow of users) {
       await connection.query(
         'INSERT INTO users (name, email, password_hash, role, status) VALUES (?, ?, ?, ?, ?)',
-        user
+        userRow
       );
     }
 
@@ -86,9 +87,9 @@ export const seedDatabase = async () => {
     console.log('📦 Seeding Products & Inventory...');
     const products = [
       ['PRD-IND-001', 'Industrial Sensor Module V3', 'Electronics', 1250.00, 45, 10, 'Warehouse A - Rack 12'],
-      ['PRD-IND-002', 'Microcontroller Board 32-Bit', 'Electronics', 2400.00, 8, 15, 'Warehouse A - Rack 04'], // LOW STOCK
+      ['PRD-IND-002', 'Microcontroller Board 32-Bit', 'Electronics', 2400.00, 8, 15, 'Warehouse A - Rack 04'],
       ['PRD-PWR-001', 'High Capacity Li-Ion Battery Pack 24V', 'Power Solutions', 5800.00, 25, 5, 'Warehouse B - Secure Storage'],
-      ['PRD-MCH-001', 'Heavy Duty Stepper Motor 10Nm', 'Machinery', 3200.00, 3, 5, 'Warehouse C - Heavy Bay'], // LOW STOCK
+      ['PRD-MCH-001', 'Heavy Duty Stepper Motor 10Nm', 'Machinery', 3200.00, 3, 5, 'Warehouse C - Heavy Bay'],
       ['PRD-CAB-001', 'Industrial Ethernet Cable 50m Roll', 'Cabling', 450.00, 100, 20, 'Warehouse D - Spools']
     ];
 
@@ -101,7 +102,6 @@ export const seedDatabase = async () => {
       );
       insertedProductIds.push(res.insertId);
 
-      // Record initial IN stock movement log
       await connection.query(
         `INSERT INTO stock_logs (product_id, qty_changed, movement_type, reason, created_by)
          VALUES (?, ?, 'IN', 'Initial Warehouse Inventory Import', ?)`,
@@ -124,7 +124,6 @@ export const seedDatabase = async () => {
     );
     const challan1Id = ch1Res.insertId;
 
-    // Create JSON Snapshot for Item 1
     const item1Snapshot = JSON.stringify({
       id: insertedProductIds[0],
       sku: 'PRD-IND-001',
@@ -139,7 +138,6 @@ export const seedDatabase = async () => {
       [challan1Id, insertedProductIds[0], 5, 1250.00, 6250.00, item1Snapshot]
     );
 
-    // Record Stock Log for Confirmed Challan 1
     await connection.query(
       `INSERT INTO stock_logs (product_id, qty_changed, movement_type, reason, created_by)
        VALUES (?, 5, 'OUT', ?, ?)`,
@@ -173,13 +171,7 @@ export const seedDatabase = async () => {
     await pool.end();
 
     console.log('🎉 Seeding Complete! Demo accounts created:');
-    console.log('----------------------------------------------------');
-    console.log('🔐 Default Password for all accounts: Password123!');
-    console.log('👑 Admin:     admin@erp.com');
-    console.log('💼 Sales:     sales@erp.com');
-    console.log('📦 Warehouse: warehouse@erp.com');
-    console.log('💳 Accounts:  accounts@erp.com');
-    console.log('----------------------------------------------------');
+    console.log('👑 Admin:     admin@erp.com (Password: Password123!)');
   } catch (error) {
     console.error('❌ Error Seeding MySQL Database:', error);
     await pool.end();

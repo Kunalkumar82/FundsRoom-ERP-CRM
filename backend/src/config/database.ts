@@ -5,14 +5,20 @@ dotenv.config();
 
 /**
  * MySQL Connection Pool Configuration
- * Standard MySQL database connection pool using mysql2/promise for async/await support.
+ * Supports standard local env variables AND Railway MySQL variables (MYSQLHOST, MYSQLUSER, etc.)
  */
+const host = process.env.MYSQLHOST || process.env.DB_HOST || 'localhost';
+const port = Number(process.env.MYSQLPORT || process.env.DB_PORT || 3306);
+const user = process.env.MYSQLUSER || process.env.DB_USER || 'root';
+const password = process.env.MYSQLPASSWORD || process.env.DB_PASSWORD || '';
+const database = process.env.MYSQLDATABASE || process.env.DB_NAME || 'mini_erp_crm';
+
 const pool = mysql.createPool({
-  host: process.env.DB_HOST || 'localhost',
-  port: Number(process.env.DB_PORT) || 3306,
-  user: process.env.DB_USER || 'root',
-  password: process.env.DB_PASSWORD || 'root',
-  database: process.env.DB_NAME || 'mini_erp_crm',
+  host,
+  port,
+  user,
+  password,
+  database,
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0,
