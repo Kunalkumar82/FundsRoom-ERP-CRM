@@ -7,7 +7,7 @@ dotenv.config();
 
 /**
  * Seed Database Script
- * Supports standard local env variables AND Railway MySQL variables (MYSQLHOST, etc.)
+ * Supports local, Railway, and Aiven Cloud SSL connections.
  */
 export const seedDatabase = async () => {
   console.log('🌱 Starting Database Seeding Process...');
@@ -19,14 +19,19 @@ export const seedDatabase = async () => {
   const port = Number(process.env.MYSQLPORT || process.env.DB_PORT || 3306);
   const user = process.env.MYSQLUSER || process.env.DB_USER || 'root';
   const password = process.env.MYSQLPASSWORD || process.env.DB_PASSWORD || '';
-  const database = process.env.MYSQLDATABASE || process.env.DB_NAME || 'mini_erp_crm';
+  const database = process.env.MYSQLDATABASE || process.env.DB_NAME || 'defaultdb';
+
+  const sslOption = (host.includes('aivencloud.com') || process.env.DB_SSL === 'true')
+    ? { rejectUnauthorized: false }
+    : undefined;
 
   const pool = mysql.createPool({
     host,
     port,
     user,
     password,
-    database
+    database,
+    ssl: sslOption
   });
 
   try {
@@ -170,8 +175,7 @@ export const seedDatabase = async () => {
     connection.release();
     await pool.end();
 
-    console.log('🎉 Seeding Complete! Demo accounts created:');
-    console.log('👑 Admin:     admin@erp.com (Password: Password123!)');
+    console.log('🎉 Seeding Complete! Demo accounts created.');
   } catch (error) {
     console.error('❌ Error Seeding MySQL Database:', error);
     await pool.end();

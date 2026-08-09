@@ -5,7 +5,7 @@ dotenv.config();
 
 /**
  * MySQL Connection Pool Configuration
- * Supports standard local env variables AND Railway MySQL variables (MYSQLHOST, MYSQLUSER, etc.)
+ * Supports standard local env variables, Railway variables, and Aiven Cloud SSL mode.
  */
 const host = process.env.MYSQLHOST || process.env.DB_HOST || 'localhost';
 const port = Number(process.env.MYSQLPORT || process.env.DB_PORT || 3306);
@@ -13,12 +13,17 @@ const user = process.env.MYSQLUSER || process.env.DB_USER || 'root';
 const password = process.env.MYSQLPASSWORD || process.env.DB_PASSWORD || '';
 const database = process.env.MYSQLDATABASE || process.env.DB_NAME || 'mini_erp_crm';
 
+const sslOption = (host.includes('aivencloud.com') || process.env.DB_SSL === 'true')
+  ? { rejectUnauthorized: false }
+  : undefined;
+
 const pool = mysql.createPool({
   host,
   port,
   user,
   password,
   database,
+  ssl: sslOption,
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0,
