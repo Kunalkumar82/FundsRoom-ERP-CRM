@@ -4,14 +4,29 @@ import jwt from 'jsonwebtoken';
 import pool from '../config/database';
 import { AuthenticatedRequest } from '../middleware/auth';
 import { User, JWTPayload, UserRole } from '../types';
+import { initializeDatabase } from '../db/initDb';
+import { seedDatabase } from '../db/seedDb';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'super_secret_mini_erp_crm_key_2026';
+
+/**
+ * Self-healing helper: Ensures MySQL tables exist and demo users are seeded
+ */
+const ensureDatabaseReady = async () => {
+  try {
+    console.log('⚡ Self-healing: Initializing and Seeding MySQL database...');
+    await initializeDatabase();
+    await seedDatabase();
+  } catch (err) {
+    console.error('Self-healing DB error:', err);
+  }
+};
 
 /**
  * Auth Controller: User Register, Login & Session Info
  */
 
-// User Registration API (Stores user profile & hashed password in MySQL)
+// User Registration API
 export const register = async (req: Request, res: Response) => {
   const { name, email, password, role = 'Sales' } = req.body;
 
@@ -22,24 +37,33 @@ export const register = async (req: Request, res: Response) => {
     });
   }
 
-  // Validate allowed roles
   const validRoles: UserRole[] = ['Admin', 'Sales', 'Warehouse', 'Accounts'];
   const userRole: UserRole = validRoles.includes(role) ? role : 'Sales';
 
   try {
-    // 1. Check if email is already registered
-    const [existingUsers]: any = await pool.query('SELECT id FROM users WHERE email = ?', [email]);
-    if (existingUsers.length > 0) {
+    let existingUsers: any;
+    try {
+      const [rows]: any = await pool.query('SELECT id FROM users WHERE email = ?', [email]);
+      existingUsers = rows;
+    } catch (dbErr: any) {
+      if (dbErr.code === 'ER_NO_SUCH_TABLE' || dbErr.message?.includes("doesn't exist")) {
+        await ensureDatabaseReady();
+        const [rows]: any = await pool.query('SELECT id FROM users WHERE email = ?', [email]);
+        existingUsers = rows;
+      } else {
+        throw dbErr;
+      }
+    }
+
+    if (existingUsers && existingUsers.length > 0) {
       return res.status(400).json({
         success: false,
         message: `An account with email "${email}" already exists.`
       });
     }
 
-    // 2. Hash Password using bcrypt
     const passwordHash = await bcrypt.hash(password, 10);
 
-    // 3. Insert into MySQL Users Table
     const [result]: any = await pool.query(
       'INSERT INTO users (name, email, password_hash, role, status) VALUES (?, ?, ?, ?, "Active")',
       [name, email, passwordHash, userRole]
@@ -47,7 +71,6 @@ export const register = async (req: Request, res: Response) => {
 
     const userId = result.insertId;
 
-    // 4. Generate JWT Token
     const payload: JWTPayload = {
       userId,
       email,
@@ -92,12 +115,27 @@ export const login = async (req: Request, res: Response) => {
   }
 
   try {
-    const [rows]: any = await pool.query(
-      'SELECT * FROM users WHERE email = ? AND status = "Active"',
-      [email]
-    );
+    let rows: any;
+    try {
+      const [result]: any = await pool.query(
+        'SELECT * FROM users WHERE email = ? AND status = "Active"',
+        [email]
+      );
+      rows = result;
+    } catch (dbErr: any) {
+      if (dbErr.code === 'ER_NO_SUCH_TABLE' || dbErr.message?.includes("doesn't exist")) {
+        await ensureDatabaseReady();
+        const [result]: any = await pool.query(
+          'SELECT * FROM users WHERE email = ? AND status = "Active"',
+          [email]
+        );
+        rows = result;
+      } else {
+        throw dbErr;
+      }
+    }
 
-    if (rows.length === 0) {
+    if (!rows || rows.length === 0) {
       return res.status(401).json({
         success: false,
         message: 'Invalid email or password.'
