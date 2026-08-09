@@ -4,7 +4,7 @@
   "description": "Full Stack Mini ERP + CRM Backend with Express, TypeScript, and MySQL",
   "main": "dist/server.js",
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && node dist/db/initDb.js && node dist/db/seedDb.js",
     "start": "node dist/server.js",
     "dev": "ts-node-dev --respawn --transpile-only src/server.ts",
     "db:init": "ts-node src/db/initDb.ts",
