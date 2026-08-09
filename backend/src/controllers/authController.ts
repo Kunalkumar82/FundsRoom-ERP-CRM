@@ -65,7 +65,7 @@ export const register = async (req: Request, res: Response) => {
     const passwordHash = await bcrypt.hash(password, 10);
 
     const [result]: any = await pool.query(
-      'INSERT INTO users (name, email, password_hash, role, status) VALUES (?, ?, ?, ?, "Active")',
+      "INSERT INTO users (name, email, password_hash, role, status) VALUES (?, ?, ?, ?, 'Active')",
       [name, email, passwordHash, userRole]
     );
 
@@ -118,7 +118,7 @@ export const login = async (req: Request, res: Response) => {
     let rows: any;
     try {
       const [result]: any = await pool.query(
-        'SELECT * FROM users WHERE email = ? AND status = "Active"',
+        "SELECT * FROM users WHERE email = ? AND status = 'Active'",
         [email]
       );
       rows = result;
@@ -126,7 +126,7 @@ export const login = async (req: Request, res: Response) => {
       if (dbErr.code === 'ER_NO_SUCH_TABLE' || dbErr.message?.includes("doesn't exist")) {
         await ensureDatabaseReady();
         const [result]: any = await pool.query(
-          'SELECT * FROM users WHERE email = ? AND status = "Active"',
+          "SELECT * FROM users WHERE email = ? AND status = 'Active'",
           [email]
         );
         rows = result;
