@@ -34,6 +34,25 @@ app.get('/api/health', (_req: Request, res: Response) => {
   });
 });
 
+// Explicit Database Initialization & Seeding Endpoint
+app.get('/api/db/init-and-seed', async (_req: Request, res: Response) => {
+  try {
+    await initializeDatabase();
+    await seedDatabase();
+    return res.json({
+      success: true,
+      message: 'Aiven Cloud MySQL Database initialized and seeded successfully with all tables and demo accounts!'
+    });
+  } catch (error: any) {
+    console.error('Error during init-and-seed endpoint execution:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to initialize and seed database.',
+      error: error.message
+    });
+  }
+});
+
 // Register API Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/customers', customerRoutes);
@@ -53,23 +72,16 @@ app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
 // Start Server and initialize DB connection
 const startServer = async () => {
   try {
-    // Attempt database initialization
     await initializeDatabase();
-    
-    // Auto-seed database if running dev
-    try {
-      await seedDatabase();
-    } catch (seedErr) {
-      console.warn('⚠️ Seeding skipped or completed with warnings:', seedErr);
-    }
+    await seedDatabase();
+    console.log('✅ Auto Database Initialized & Seeded.');
   } catch (dbError) {
-    console.error('⚠️ Could not connect to MySQL server during startup.', dbError);
-    console.error('👉 Ensure MySQL is running locally on port 3306 with credentials in .env');
+    console.error('⚠️ Could not connect or initialize MySQL database during startup.', dbError);
   }
 
   app.listen(PORT, () => {
     console.log(`=======================================================`);
-    console.log(`🚀 Mini ERP + CRM Backend running on http://localhost:${PORT}`);
+    console.log(`🚀 Mini ERP + CRM Backend running on port ${PORT}`);
     console.log(`=======================================================`);
   });
 };
