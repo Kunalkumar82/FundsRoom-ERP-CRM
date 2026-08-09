@@ -37,16 +37,33 @@ export const seedDatabase = async () => {
   try {
     const connection = await pool.getConnection();
 
-    // Clear existing data (in reverse foreign key order)
+    // Check if users table already has records
+    try {
+      const [existingUsers]: any = await connection.query('SELECT COUNT(*) as count FROM users');
+      if (existingUsers[0].count > 0) {
+        console.log(`ℹ️ Users table already contains ${existingUsers[0].count} users. Skipping re-seeding.`);
+        connection.release();
+        await pool.end();
+        return;
+      }
+    } catch (checkErr) {
+      console.log('Table check note:', checkErr);
+    }
+
+    // Safely clear existing data (in reverse foreign key order)
     console.log('🧹 Clearing existing table data...');
-    await connection.query('SET FOREIGN_KEY_CHECKS = 0');
-    await connection.query('TRUNCATE TABLE challan_items');
-    await connection.query('TRUNCATE TABLE sales_challans');
-    await connection.query('TRUNCATE TABLE stock_logs');
-    await connection.query('TRUNCATE TABLE products');
-    await connection.query('TRUNCATE TABLE customers');
-    await connection.query('TRUNCATE TABLE users');
-    await connection.query('SET FOREIGN_KEY_CHECKS = 1');
+    try {
+      await connection.query('SET FOREIGN_KEY_CHECKS = 0');
+      await connection.query('TRUNCATE TABLE challan_items').catch(() => {});
+      await connection.query('TRUNCATE TABLE sales_challans').catch(() => {});
+      await connection.query('TRUNCATE TABLE stock_logs').catch(() => {});
+      await connection.query('TRUNCATE TABLE products').catch(() => {});
+      await connection.query('TRUNCATE TABLE customers').catch(() => {});
+      await connection.query('TRUNCATE TABLE users').catch(() => {});
+      await connection.query('SET FOREIGN_KEY_CHECKS = 1');
+    } catch (clearErr) {
+      console.warn('Truncate warning (safe to ignore on new DB):', clearErr);
+    }
 
     // 1. Seed Users
     console.log('👤 Seeding Demo Users...');
@@ -62,14 +79,14 @@ export const seedDatabase = async () => {
 
     for (const userRow of users) {
       await connection.query(
-        'INSERT INTO users (name, email, password_hash, role, status) VALUES (?, ?, ?, ?, ?)',
+        'INSERT IGNORE INTO users (name, email, password_hash, role, status) VALUES (?, ?, ?, ?, ?)',
         userRow
       );
     }
 
     // Get Admin user ID for log reference
     const [userRows]: any = await connection.query('SELECT id, role FROM users WHERE email = ?', ['admin@erp.com']);
-    const adminId = userRows[0].id;
+    const adminId = userRows.length > 0 ? userRows[0].id : 1;
 
     // 2. Seed Customers
     console.log('🏢 Seeding CRM Customers...');
@@ -82,7 +99,7 @@ export const seedDatabase = async () => {
 
     for (const cust of customers) {
       await connection.query(
-        `INSERT INTO customers (name, mobile, email, business_name, gst_number, type, address, status, follow_up_date, notes)
+        `INSERT IGNORE INTO customers (name, mobile, email, business_name, gst_number, type, address, status, follow_up_date, notes)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         cust
       );
@@ -101,76 +118,19 @@ export const seedDatabase = async () => {
     const insertedProductIds: number[] = [];
     for (const prd of products) {
       const [res]: any = await connection.query(
-        `INSERT INTO products (sku, name, category, unit_price, current_stock, min_stock_alert_qty, location)
+        `INSERT IGNORE INTO products (sku, name, category, unit_price, current_stock, min_stock_alert_qty, location)
          VALUES (?, ?, ?, ?, ?, ?, ?)`,
         prd
       );
-      insertedProductIds.push(res.insertId);
-
-      await connection.query(
-        `INSERT INTO stock_logs (product_id, qty_changed, movement_type, reason, created_by)
-         VALUES (?, ?, 'IN', 'Initial Warehouse Inventory Import', ?)`,
-        [res.insertId, prd[4], adminId]
-      );
+      if (res.insertId) {
+        insertedProductIds.push(res.insertId);
+        await connection.query(
+          `INSERT INTO stock_logs (product_id, qty_changed, movement_type, reason, created_by)
+           VALUES (?, ?, 'IN', 'Initial Warehouse Inventory Import', ?)`,
+          [res.insertId, prd[4], adminId]
+        );
+      }
     }
-
-    // 4. Seed Sales Challans
-    console.log('📑 Seeding Sales Challans with Product Snapshots...');
-    const [customerRows]: any = await connection.query('SELECT id FROM customers LIMIT 2');
-    const customer1Id = customerRows[0].id;
-    const customer2Id = customerRows[1].id;
-
-    // Challan 1: Confirmed
-    const challan1Number = 'CH-202608-0001';
-    const [ch1Res]: any = await connection.query(
-      `INSERT INTO sales_challans (challan_number, customer_id, total_quantity, total_amount, status, created_by)
-       VALUES (?, ?, ?, ?, 'Confirmed', ?)`,
-      [challan1Number, customer1Id, 5, 6250.00, adminId]
-    );
-    const challan1Id = ch1Res.insertId;
-
-    const item1Snapshot = JSON.stringify({
-      id: insertedProductIds[0],
-      sku: 'PRD-IND-001',
-      name: 'Industrial Sensor Module V3',
-      category: 'Electronics',
-      unit_price: 1250.00
-    });
-
-    await connection.query(
-      `INSERT INTO challan_items (challan_id, product_id, quantity, unit_price, subtotal, product_snapshot)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      [challan1Id, insertedProductIds[0], 5, 1250.00, 6250.00, item1Snapshot]
-    );
-
-    await connection.query(
-      `INSERT INTO stock_logs (product_id, qty_changed, movement_type, reason, created_by)
-       VALUES (?, 5, 'OUT', ?, ?)`,
-      [insertedProductIds[0], `Sales Challan #${challan1Number}`, adminId]
-    );
-
-    // Challan 2: Draft
-    const challan2Number = 'CH-202608-0002';
-    const [ch2Res]: any = await connection.query(
-      `INSERT INTO sales_challans (challan_number, customer_id, total_quantity, total_amount, status, created_by)
-       VALUES (?, ?, ?, ?, 'Draft', ?)`,
-      [challan2Number, customer2Id, 2, 4800.00, adminId]
-    );
-    const challan2Id = ch2Res.insertId;
-
-    const item2Snapshot = JSON.stringify({
-      id: insertedProductIds[1],
-      sku: 'PRD-IND-002',
-      name: 'Microcontroller Board 32-Bit',
-      category: 'Electronics',
-      unit_price: 2400.00
-    });
-
-    await connection.query(
-      `INSERT INTO challan_items (challan_id, product_id, quantity, unit_price, subtotal, product_snapshot)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      [challan2Id, insertedProductIds[1], 2, 2400.00, 4800.00, item2Snapshot]
-    );
 
     connection.release();
     await pool.end();
